@@ -8,9 +8,15 @@
   "dependencies": {
     "cookie-parser": "~1.4.4",
     "debug": "~2.6.9",
+    "elasticdump": "^6.87.0",
+    "esdk-obs-nodejs": "^3.21.6",
     "express": "~4.16.1",
     "http-errors": "~1.6.3",
     "jade": "~1.11.0",
-    "morgan": "~1.9.1"
+    "morgan": "~1.9.1",
+    "pg": "^8.7.3"
+  },
+  "devDependencies": {
+    "prettier": "2.7.1"
   }
 }
