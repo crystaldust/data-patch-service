@@ -1,3 +1,4 @@
+const fs = require("fs");
 var createError = require("http-errors");
 var express = require("express");
 var path = require("path");
@@ -7,6 +8,9 @@ var logger = require("morgan");
 var indexRouter = require("./routes/index");
 var usersRouter = require("./routes/users");
 const http = require("http");
+
+const esdump = require("./esdump");
+const opensearch = require("./opensearch");
 
 var app = express();
 
@@ -25,9 +29,61 @@ app.use("/users", usersRouter);
 
 let ENV_NAME = process.env.ENV_NAME || "HWCLOUD";
 
-function dumpJsonGzip() {}
+function getDiffESDumpParams(fromOwnerRepos, index, prefix = "/tmp") {
+  return opensearch.getUniqOwnerRepos(index).then((uniqOwnerRepos) => {
+    const diffESDumpParams = [];
 
-function uploadOBS() {}
+    uniqOwnerRepos.forEach((item) => {
+      const { owner, repo } = item;
+      const key = `${owner}___${repo}`;
+      const searchBody = {
+        query: {
+          bool: {
+            must: [
+              {
+                match: {
+                  "search_key.owner.keyword": owner,
+                },
+              },
+              {
+                match: {
+                  "search_key.repo.keyword": repo,
+                },
+              },
+            ],
+          },
+        },
+      };
+      if (fromOwnerRepos.hasOwnProperty(key)) {
+        const timestamp = fromOwnerRepos[key];
+        searchBody.query.bool.must.push({
+          range: {
+            "search_key.updated_at": {
+              gt: timestamp,
+            },
+          },
+        });
+      }
+
+      diffESDumpParams.push({
+        searchBody,
+        outputPath: `${prefix}/${key}.${index}.json.gzip`,
+      });
+    });
+    return diffESDumpParams;
+  });
+}
+
+const INDICE_MAP = {
+  gits: ["gits"],
+  github: [
+    "github_commits",
+    "github_pull_requests",
+    "github_issues",
+    "github_issues_comments",
+    "github_issues_timeline",
+  ],
+};
 
 app.post("/api/patch", function (req, res) {
   const body = req.body;
@@ -39,6 +95,43 @@ app.post("/api/patch", function (req, res) {
 
   const nowStr = new Date().toISOString();
   const taskId = `FROM_${from}_TO_${ENV_NAME}_${nowStr}`;
+  // TODO Add the task record to PG
+  if (!fs.existsSync(taskId)) {
+    fs.mkdirSync(taskId);
+  }
+
+  // const taskPromises = [];
+  const allPromises = [];
+  for (const key in req.body) {
+    // key is [gits, github...]
+    const indices = INDICE_MAP[key];
+    const promises = indices.map((index) => {
+      return getDiffESDumpParams(req.body[key], index, `./${taskId}`).then(
+        (diffDumpParams) => {
+          const dumpPromises = diffDumpParams.map((param) => {
+            const { searchBody, outputPath } = param;
+            return esdump.createCompressedJson(index, outputPath, searchBody);
+            // return 0;
+          });
+          return Promise.all(dumpPromises).then((results) => {
+            return results;
+          });
+        }
+      );
+    });
+    allPromises.push(...promises);
+  }
+
+  Promise.all(allPromises)
+    .then((results) => {
+      // TODO Update task state(dump finished)
+      console.log("all dump promises ready");
+      console.log(results);
+    })
+    .catch((err) => {
+      // TODO Update task state(dump error)
+      console.log("failed to collect dump promises, err:", err);
+    });
 
   return res.send({
     task_id: taskId,
