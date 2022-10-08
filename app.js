@@ -36,6 +36,12 @@ function getDiffESDumpParams(fromOwnerRepos, index, prefix = "/tmp") {
     uniqOwnerRepos.forEach((item) => {
       const { owner, repo } = item;
       const key = `${owner}___${repo}`;
+      // TODO This is a TEMP approach
+      // Decide: loop through fromOwnerRepos and just fetch the specified owner_repos
+      if (!fromOwnerRepos.hasOwnProperty(key)) {
+        return;
+      }
+
       const searchBody = {
         query: {
           bool: {
@@ -89,11 +95,12 @@ app.post("/api/patch", function (req, res) {
   const body = req.body;
   const from = req.header("from");
   if (!body || !from) {
+    console.warn("Either from or body is empty")
     res.status(400);
     return res.send("");
   }
 
-  const nowStr = new Date().toISOString();
+  const nowStr = new Date().toISOString().replaceAll(':', '');
   const taskId = `FROM_${from}_TO_${ENV_NAME}_${nowStr}`;
   // TODO Add the task record to PG
   if (!fs.existsSync(taskId)) {
@@ -111,9 +118,10 @@ app.post("/api/patch", function (req, res) {
           const dumpPromises = diffDumpParams.map((param) => {
             const { searchBody, outputPath } = param;
             return esdump.createCompressedJson(index, outputPath, searchBody);
-            // return 0;
           });
           return Promise.all(dumpPromises).then((results) => {
+            // TODO Update the task state(dump finished, start zipping)
+            console.log('all dump finished', 'zip the folder ', taskId)
             return results;
           });
         }
@@ -124,7 +132,7 @@ app.post("/api/patch", function (req, res) {
 
   Promise.all(allPromises)
     .then((results) => {
-      // TODO Update task state(dump finished)
+      // TODO Update task state(dump started)
       console.log("all dump promises ready");
       console.log(results);
     })
