@@ -1,0 +1,23 @@
+version: '3.7'
+
+services:
+  data-patch-service:
+    container_name: data-patch-service
+    hostname: data-patch-service
+    image: data-patch-service:dev
+    restart: always
+    # 跨多个Docker-compose配置文件，services在一个网桥
+    networks:
+      - dev-network
+    environment:
+      - OS_HOST=192.168.8.231
+      - OS_PORT=9200
+      - OS_AUTH=admin:admin
+      - PORT=8008
+    ports:
+      - "13000:8008"
+
+
+networks:
+  dev-network:
+    external: true
