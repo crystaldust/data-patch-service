@@ -25,7 +25,7 @@ app.set("views", path.join(__dirname, "views"));
 app.set("view engine", "jade");
 
 app.use(logger("dev"));
-app.use(express.json());
+app.use(express.json({limit: '5mb'}));
 app.use(express.urlencoded({extended: false}));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
@@ -149,22 +149,20 @@ app.post("/api/patch", function (req, res) {
 
     // const taskPromises = [];
     const allPromises = [];
-    for (const key in req.body) {
+    for (const index in req.body) {
         // key is [gits, github...]
-        const indices = INDICE_MAP[key];
-        const promises = indices.map((index) => {
-            return getDiffESDumpParams(req.body[key], index, `./${taskId}`).then(
-                (diffDumpParams) => {
-                    const dumpPromises = diffDumpParams.map((param) => {
-                        const {searchBody, outputPath} = param;
-                        return esdump.createCompressedJson(index, outputPath, searchBody);
-                    });
-                    return Promise.all(dumpPromises).then((results) => {
-                        return results;
-                    });
-                }
-            );
-        });
+        // const indices = INDICE_MAP[key];
+        return getDiffESDumpParams(req.body[index], index, `./${taskId}`).then(
+            (diffDumpParams) => {
+                const dumpPromises = diffDumpParams.map((param) => {
+                    const {searchBody, outputPath} = param;
+                    return esdump.createCompressedJson(index, outputPath, searchBody);
+                });
+                return Promise.all(dumpPromises).then((results) => {
+                    return results;
+                });
+            }
+        );
         allPromises.push(...promises);
     }
 
@@ -181,7 +179,7 @@ app.post("/api/patch", function (req, res) {
         task.updateUrl(uploadResult.uploadUrl)
     }).catch((err) => {
         task.updateState('error')
-        task.update('error', err)
+        task.update('error', err.message)
     });
 
     return res.send({
