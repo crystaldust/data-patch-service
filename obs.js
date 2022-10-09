@@ -29,11 +29,13 @@ function upload(localFilePath, bucketName) {
                 if (err) {
                     return reject(err);
                 }
-
-                if (result.CommonMsg.Status < 300 && result.InterfaceResult) {
-                    result.uploadUrl = `obs://${bucketName}/${key}`
-                    return resolve(result);
+                if (result.CommonMsg.Status >= 300 /*|| result.InterfaceResult*/) {
+                    const errMsg = `${result.CommonMsg.Status}: ${result.CommonMsg.Code}`
+                    return reject(new Error(errMsg))
                 }
+
+                result.uploadUrl = `obs://${bucketName}/${key}`
+                return resolve(result);
             }
         );
     })

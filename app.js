@@ -181,7 +181,7 @@ app.post("/api/patch", function (req, res) {
         task.updateUrl(uploadResult.uploadUrl)
     }).catch((err) => {
         task.updateState('error')
-        this.update('error', err)
+        task.update('error', err)
     });
 
     return res.send({
