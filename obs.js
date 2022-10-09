@@ -1,9 +1,10 @@
+const fs = require('fs')
 const ObsClient = require("esdk-obs-nodejs");
 
 const ak = process.env.OBS_AK || "xxx";
 const sk = process.env.OBS_SK || "xxx";
 const endpoint = process.env.OBS_ENDPOINT || 'https://obs.cn-north-4.myhuaweicloud.com';
-
+const PREFIX = 'os-patches'
 const obsClient = new ObsClient({
   access_key_id: ak,
   secret_access_key: sk,
@@ -16,28 +17,26 @@ const obsClient = new ObsClient({
 
 // TaskId --(map)--> localFilePath
 function upload(localFilePath, bucketName) {
-  obsClient.putObject(
-    {
-      Bucket: bucketName,
-      key: `os-patches/${localFilePath}`,
-      Body: fs.createReadStream(localFilePath)
-    },
-    (err, result) => {
-      if (err) {
-        console.log(err);
-        return;
-      }
+  return new Promise((resolve, reject)=>{
+    const key = `${PREFIX}/${localFilePath}`
+    obsClient.putObject(
+        {
+          Bucket: bucketName,
+          Key: key,
+          Body: fs.createReadStream(localFilePath)
+        },
+        (err, result) => {
+          if (err) {
+            return reject(err);
+          }
 
-      if (result.CommonMsg.Status < 300 && result.InterfaceResult) {
-        console.log("upload successful");
-        return;
-      }
+          if (result.CommonMsg.Status < 300 && result.InterfaceResult) {
+            result.uploadUrl = `obs://${bucketName}/${key}`
+            return resolve(result);
+          }
+        }
+    );
+  })
 
-      console.log("Code-->" + result.CommonMsg.Code);
-      console.log("Message-->" + result.CommonMsg.Message);
-      console.log("HostId-->" + result.CommonMsg.HostId);
-      console.log("RequestId-->" + result.CommonMsg.RequestId);
-    }
-  );
 }
 exports.upload = upload

@@ -169,16 +169,18 @@ app.post("/api/patch", function (req, res) {
     }
     // TODO Update task state(dump started)
     console.log('dump started')
-        .then((results) => {
+    Promise.all(allPromises).then((results) => {
             console.log("all dump promises finished");
             // TODO Dump finished, update the state(zipping)
             // console.log(results);
-            pack(taskId).then((archiveFilePath)=>{
-                // TODO update state(zipped)
-                // start obs uploading
-                obs.upload(archiveFilePath, 'oss-know-bj')
-            })
-        })
+            return pack(taskId)
+        }).then((archiveFilePath)=>{
+        // TODO update state(zipped)
+        // start obs uploading
+        return obs.upload(archiveFilePath, 'oss-know-bj')
+        }).then((uploadResult)=>{
+            console.log('upload Url:', uploadResult.uploadUrl )
+    })
         .catch((err) => {
             // TODO Update task state(dump error)
             console.log("failed to collect dump promises, err:", err);
