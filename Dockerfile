@@ -9,6 +9,7 @@ ADD obs.js ./
 ADD opensearch.js ./
 ADD package.json ./
 ADD postgres.js ./
+ADD db.js ./
 ADD yarn.lock ./
 
 ADD public/ ./public/
