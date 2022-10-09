@@ -14,6 +14,8 @@ const http = require("http");
 const esdump = require("./esdump");
 const opensearch = require("./opensearch");
 const obs = require('./obs')
+const db = require('./db')
+const {Task} = require("./db");
 
 
 var app = express();
@@ -32,6 +34,8 @@ app.use("/", indexRouter);
 app.use("/users", usersRouter);
 
 let ENV_NAME = process.env.ENV_NAME || "HWCLOUD";
+
+const memoryEngine = new db.MemoryEngine()
 
 function getDiffESDumpParams(fromOwnerRepos, index, prefix = "/tmp") {
     return opensearch.getUniqOwnerRepos(index).then((uniqOwnerRepos) => {
@@ -151,15 +155,11 @@ app.post("/api/patch", function (req, res) {
         const promises = indices.map((index) => {
             return getDiffESDumpParams(req.body[key], index, `./${taskId}`).then(
                 (diffDumpParams) => {
-                    console.log(JSON.stringify(diffDumpParams, null, 2))
                     const dumpPromises = diffDumpParams.map((param) => {
                         const {searchBody, outputPath} = param;
                         return esdump.createCompressedJson(index, outputPath, searchBody);
                     });
                     return Promise.all(dumpPromises).then((results) => {
-                        // // TODO Update the task state(dump finished, start zipping)
-                        // console.log('all dump finished', 'zip the folder ', taskId)
-                        // pack(taskId)
                         return results;
                     });
                 }
@@ -167,22 +167,21 @@ app.post("/api/patch", function (req, res) {
         });
         allPromises.push(...promises);
     }
-    // TODO Update task state(dump started)
-    console.log('dump started')
+
+    const task = new Task(taskId, memoryEngine)
+    task.updateState('dumping')
     Promise.all(allPromises).then((results) => {
-        console.log("all dump promises finished");
-        // TODO Dump finished, update the state(zipping)
-        // console.log(results);
+        task.updateState('archiving')
         return pack(taskId)
     }).then((archiveFilePath) => {
-        // TODO update state(zipped)
-        // start obs uploading
+        task.updateState('uploading')
         return obs.upload(archiveFilePath, 'oss-know-bj')
     }).then((uploadResult) => {
-        console.log('upload Url:', uploadResult.uploadUrl)
+        task.updateState('uploaded')
+        task.updateUrl(uploadResult.uploadUrl)
     }).catch((err) => {
-        // TODO Update task state(dump error)
-        console.log("failed to collect dump promises, err:", err);
+        task.updateState('error')
+        this.update('error', err)
     });
 
     return res.send({
@@ -196,10 +195,14 @@ app.get("/api/patch", function (req, res) {
         res.status(400);
         return res.send("");
     }
+    const task = memoryEngine.get(taskId)
+    if (!task) {
+        return res.send({
+            state: 'not_found'
+        })
+    }
 
-    return res.send({
-        state: "created",
-    });
+    return res.send(task)
 });
 
 // catch 404 and forward to error handler
