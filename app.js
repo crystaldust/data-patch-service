@@ -5,7 +5,7 @@ var path = require("path");
 var cookieParser = require("cookie-parser");
 var logger = require("morgan");
 
-const archiver = require('archiver')
+const archive = require('./archive')
 
 var indexRouter = require("./routes/index");
 var usersRouter = require("./routes/users");
@@ -25,7 +25,7 @@ app.set("views", path.join(__dirname, "views"));
 app.set("view engine", "jade");
 
 app.use(logger("dev"));
-app.use(express.json());
+app.use(express.json({limit: '5mb'}));
 app.use(express.urlencoded({extended: false}));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
@@ -37,99 +37,6 @@ let ENV_NAME = process.env.ENV_NAME || "HWCLOUD";
 
 const memoryEngine = new db.MemoryEngine()
 
-function getDiffESDumpParams(fromOwnerRepos, index, prefix = "/tmp") {
-    return opensearch.getUniqOwnerRepos(index).then((uniqOwnerRepos) => {
-        const diffESDumpParams = [];
-
-        uniqOwnerRepos.forEach((item) => {
-            const {owner, repo} = item;
-            const key = `${owner}___${repo}`;
-            // Decide: loop through fromOwnerRepos and just fetch the specified owner_repos
-            // Decision: We should dump the data if it's not specified from the requester
-            // Since it's needed if not specified, but the code can be used for debugging.
-            if (!fromOwnerRepos.hasOwnProperty(key)) {
-                return;
-            }
-
-            const searchBody = {
-                query: {
-                    bool: {
-                        must: [
-                            {
-                                match: {
-                                    "search_key.owner.keyword": owner,
-                                },
-                            },
-                            {
-                                match: {
-                                    "search_key.repo.keyword": repo,
-                                },
-                            },
-                        ],
-                    },
-                },
-            };
-            if (fromOwnerRepos.hasOwnProperty(key)) {
-                const timestamp = fromOwnerRepos[key];
-                searchBody.query.bool.must.push({
-                    range: {
-                        "search_key.updated_at": {
-                            gt: timestamp,
-                        },
-                    },
-                });
-            }
-
-            diffESDumpParams.push({
-                searchBody,
-                outputPath: `${prefix}/${key}.${index}.json`,
-            });
-        });
-        return diffESDumpParams;
-    });
-}
-
-function pack(taskID) {
-    return new Promise((resolve, reject) => {
-        // The tar lib has a bug that will change the file stat, bring the error of size mismatch.
-        // const archive = archiver('tar', {gzip: false})
-        const archivePath = `${taskID}.zip`
-        const archive = archiver('zip', {level: 9})
-        const output = fs.createWriteStream(archivePath)
-
-        output.on('close', () => {
-            return resolve(archivePath)
-        })
-        // output.on('end', ()=>{
-        //     console.log('data drained')
-        // })
-        archive.on('error', (err) => {
-            return reject(err);
-        })
-        archive.on('warning', function (err) {
-            if (err.code === 'ENOENT') {
-                console.log('tar warning!', err)
-            } else {
-                return reject(err)
-            }
-        });
-
-        archive.pipe(output)
-        archive.directory(taskID)
-        archive.finalize()
-    })
-}
-
-const INDICE_MAP = {
-    gits: ["gits"],
-    github: [
-        "github_commits",
-        "github_pull_requests",
-        "github_issues",
-        "github_issues_comments",
-        "github_issues_timeline",
-    ],
-};
 
 app.post("/api/patch", function (req, res) {
     const body = req.body;
@@ -147,32 +54,27 @@ app.post("/api/patch", function (req, res) {
         fs.mkdirSync(taskId);
     }
 
-    // const taskPromises = [];
     const allPromises = [];
-    for (const key in req.body) {
-        // key is [gits, github...]
-        const indices = INDICE_MAP[key];
-        const promises = indices.map((index) => {
-            return getDiffESDumpParams(req.body[key], index, `./${taskId}`).then(
-                (diffDumpParams) => {
-                    const dumpPromises = diffDumpParams.map((param) => {
-                        const {searchBody, outputPath} = param;
-                        return esdump.createCompressedJson(index, outputPath, searchBody);
-                    });
-                    return Promise.all(dumpPromises).then((results) => {
-                        return results;
-                    });
-                }
-            );
-        });
-        allPromises.push(...promises);
+    for (const index in req.body) {
+        const indexPromise = opensearch.getDiffESDumpParams(req.body[index], index, `./${taskId}`).then(
+            (diffDumpParams) => {
+                const dumpPromises = diffDumpParams.map((param) => {
+                    const {searchBody, outputPath} = param;
+                    return esdump.createCompressedJson(index, outputPath, searchBody);
+                });
+                return Promise.all(dumpPromises).then((results) => {
+                    return results;
+                });
+            }
+        );
+        allPromises.push(indexPromise);
     }
 
     const task = new Task(taskId, memoryEngine)
     task.updateState('dumping')
     Promise.all(allPromises).then((results) => {
         task.updateState('archiving')
-        return pack(taskId)
+        return archive.pack(taskId)
     }).then((archiveFilePath) => {
         task.updateState('uploading')
         return obs.upload(archiveFilePath, 'oss-know-bj')
@@ -181,7 +83,7 @@ app.post("/api/patch", function (req, res) {
         task.updateUrl(uploadResult.uploadUrl)
     }).catch((err) => {
         task.updateState('error')
-        task.update('error', err)
+        task.update('error', err.message)
     });
 
     return res.send({

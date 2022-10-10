@@ -61,7 +61,61 @@ function getUniqOwnerRepos(index) {
     });
 }
 
+function getDiffESDumpParams(fromOwnerRepos, index, prefix = "/tmp") {
+  return getUniqOwnerRepos(index).then((uniqOwnerRepos) => {
+    const diffESDumpParams = [];
+
+    uniqOwnerRepos.forEach((item) => {
+      const {owner, repo} = item;
+      const key = `${owner}___${repo}`;
+      // Decide: loop through fromOwnerRepos and just fetch the specified owner_repos
+      // Decision: We should dump the data if it's not specified from the requester
+      // Since it's needed if not specified, but the code can be used for debugging.
+      if (!fromOwnerRepos.hasOwnProperty(key)) {
+        return;
+      }
+
+      const searchBody = {
+        query: {
+          bool: {
+            must: [
+              {
+                match: {
+                  "search_key.owner.keyword": owner,
+                },
+              },
+              {
+                match: {
+                  "search_key.repo.keyword": repo,
+                },
+              },
+            ],
+          },
+        },
+      };
+      if (fromOwnerRepos.hasOwnProperty(key)) {
+        const timestamp = fromOwnerRepos[key];
+        searchBody.query.bool.must.push({
+          range: {
+            "search_key.updated_at": {
+              gt: timestamp,
+            },
+          },
+        });
+      }
+
+      diffESDumpParams.push({
+        searchBody,
+        outputPath: `${prefix}/${key}.${index}.json`,
+      });
+    });
+    return diffESDumpParams;
+  });
+}
+
+
 exports.getUniqOwnerRepos = getUniqOwnerRepos;
+exports.getDiffESDumpParams = getDiffESDumpParams
 exports.host = host;
 exports.protocol = protocol;
 exports.port = port;

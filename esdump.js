@@ -37,7 +37,7 @@ const OPTIONS_TEMPLATE = {
     timeout: null,
     toLog: true,
     quiet: false,
-    fsCompress: true,
+    fsCompress: false,
     awsIniFileName: null,
     sessionToken: null,
     transform: null,
