@@ -63,6 +63,7 @@ app.post("/api/patch", function (req, res) {
                     return esdump.createCompressedJson(index, outputPath, searchBody);
                 });
                 return Promise.all(dumpPromises).then((results) => {
+                    console.log(`index ${index} dump finished, ${results.length} owner___repos dumped`)
                     return results;
                 });
             }
