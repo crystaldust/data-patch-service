@@ -8,6 +8,7 @@
   "dependencies": {
     "@opensearch-project/opensearch": "^2.0.0",
     "archiver": "^5.3.1",
+    "bunyan": "^1.8.15",
     "cookie-parser": "~1.4.4",
     "debug": "~2.6.9",
     "elasticdump": "^6.87.0",

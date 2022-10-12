@@ -35,6 +35,7 @@ function upload(localFilePath, bucketName) {
                 }
 
                 result.uploadUrl = `obs://${bucketName}/${key}`
+                result.localFilePath = localFilePath
                 return resolve(result);
             }
         );

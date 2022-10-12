@@ -1,5 +1,10 @@
+const fs = require('fs')
+const bunyan = require('bunyan')
 const ElasticDump = require("elasticdump");
 const opensearch = require("./opensearch");
+
+const logger = bunyan.createLogger({name: 'esdump'})
+const GIGA_BYTES = 1024 * 1024 * 1024
 
 const OPTIONS_TEMPLATE = {
     size: -1,
@@ -116,4 +121,46 @@ function createCompressedJson(index, outputTag, searchBody = null) {
         });
 }
 
+function fileToOpenSearch(filePath, index, fsCompress = false, limit = 1000) {
+    return new Promise((resolve, reject) => {
+        const options = Object.assign({}, OPTIONS_TEMPLATE);
+        options.input = filePath;
+        options.output = `https://${opensearch.auth}@${opensearch.host}:${opensearch.port}/${index}`;
+        options.fsCompress = fsCompress
+        options.limit = limit
+
+        options.transform = `@./dump-transformer?index=${index}`
+
+        if (filePath.indexOf('microsoft___DeepSpeed.github_issues_timeline') == -1) {
+            return resolve(null)
+        }
+        console.log('dumping ', filePath)
+        const dumper = new ElasticDump(options);
+        // logger.info('dumping', filePath)
+        console.log('foo')
+        const fsStat = fs.statSync(filePath)
+        console.log('bar')
+        console.log(filePath)
+        if (true || fsStat.size > GIGA_BYTES) { // TODO Maybe we should just track it in non-production env?
+            const fileSize = fsStat.size / GIGA_BYTES;
+            dumper.on('log', (msg) => {
+                logger.debug(`dump log ${filePath}  (${fileSize} GBs), ${msg}`)
+            })
+        }
+        logger.info('start dumping')
+        dumper.dump((err, totalWrites) => {
+            logger.info('dumped: ', filePath)
+            if (err) {
+                return reject(err)
+            }
+            return resolve({
+                filePath,
+                totalWrites
+            })
+        })
+
+    })
+}
+
 exports.createCompressedJson = createCompressedJson;
+exports.fileToOpensearch = fileToOpenSearch

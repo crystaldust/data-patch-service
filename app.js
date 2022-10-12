@@ -3,8 +3,9 @@ var createError = require("http-errors");
 var express = require("express");
 var path = require("path");
 var cookieParser = require("cookie-parser");
-var logger = require("morgan");
+var morgan = require("morgan");
 
+const bunyan = require('bunyan')
 const archive = require('./archive')
 
 var indexRouter = require("./routes/index");
@@ -17,6 +18,7 @@ const obs = require('./obs')
 const db = require('./db')
 const {Task} = require("./db");
 
+const logger = bunyan.createLogger({name: 'app'})
 
 var app = express();
 
@@ -24,7 +26,7 @@ var app = express();
 app.set("views", path.join(__dirname, "views"));
 app.set("view engine", "jade");
 
-app.use(logger("dev"));
+app.use(morgan("dev"));
 app.use(express.json({limit: '5mb'}));
 app.use(express.urlencoded({extended: false}));
 app.use(cookieParser());
@@ -42,7 +44,7 @@ app.post("/api/patch", function (req, res) {
     const body = req.body;
     const from = req.header("from");
     if (!body || !from) {
-        console.warn("Either from or body is empty")
+        logger.warn("Either from or body is empty")
         res.status(400);
         return res.send("");
     }
@@ -63,7 +65,7 @@ app.post("/api/patch", function (req, res) {
                     return esdump.createCompressedJson(index, outputPath, searchBody);
                 });
                 return Promise.all(dumpPromises).then((results) => {
-                    console.log(`index ${index} dump finished, ${results.length} owner___repos dumped`)
+                    logger.info(`index ${index} dump finished, ${results.length} owner___repos dumped`)
                     return results;
                 });
             }
@@ -82,6 +84,11 @@ app.post("/api/patch", function (req, res) {
     }).then((uploadResult) => {
         task.updateState('uploaded')
         task.updateUrl(uploadResult.uploadUrl)
+        return uploadResult
+    }).then(uploadResult => {
+        logger.info('Archive uploaded, delete', uploadResult.localFilePath, taskId)
+        fs.rmdirSync(taskId)
+        fs.rmSync(uploadResult.localFilePath)
     }).catch((err) => {
         task.updateState('error')
         task.update('error', err.message)
